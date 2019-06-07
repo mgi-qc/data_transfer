@@ -31,10 +31,6 @@ def paths(indir, dtdir):
         df.write('{}/*fastq*\n'.format(indir))
 
 
-def md5_check():
-    pass
-
-
 def gxfr_command(dtdir):
     # gxfer-upload-md5 --file=dt1000 --tag="Test\ This\ Format\ Is\ Fun\ -\ DT-1000"
     # --emails=ltrani@wustl.edu,jnelson@wustl.edu,antonacci.t.j
@@ -62,10 +58,22 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
         fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
         file_field = ''
+        print(fq_files)
         for file in fq_files:
+            print('test1')
             fastq = file.split('/')[-1]
             if 'md5' not in fastq:
+                md5_check = True
                 file_field += fastq + ' '
+                for file in fq_files:
+                    print('test2')
+                    check_file = file.split('/')[-1]
+                    if check_file == fastq + '.md5':
+                        md5_check = False
+                        print('{}.md5 found'.format(fastq))
+                if md5_check:
+                    print('md5 file no found for {}'.format(fastq))
+
         line['Files'] = file_field.rstrip()
         sm.writerow(line)
 
