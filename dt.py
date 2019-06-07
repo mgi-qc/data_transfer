@@ -13,7 +13,7 @@ cwd = os.getcwd()
 if not os.path.isfile(args.f):
     sys.exit('{} file not found'.format(args.f))
 
-dt_dir = input('Input data transfer directory (JIRA ticket number):\n').strip()
+dt_dir = input('\nInput data transfer directory (JIRA ticket number):\n').strip()
 
 if os.path.isdir(dt_dir):
     sys.exit('Exiting: {} directory already exists.'.format(dt_dir))
@@ -32,15 +32,18 @@ def paths(indir, dtdir):
 
 
 def gxfr_command(dtdir):
-    # gxfer-upload-md5 --file=dt1000 --tag="Test\ This\ Format\ Is\ Fun\ -\ DT-1000"
-    # --emails=ltrani@wustl.edu,jnelson@wustl.edu,antonacci.t.j
-    dt_file = dtdir.lower().replace('-', '')
-    tag = input('Enter data transfer subject line:\n').strip().replace(' ', '\ ')
-    emails = input('Enter data transfer emails (comma separated list):\n')
-    with open('gxfer.data.transfer.sh', 'w') as gx:
-        gx.write('gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(dt_file, tag, dt_dir, emails))
 
-    return
+    while True:
+        dt_file = dtdir.lower().replace('-', '')
+        tag = input('\nEnter data transfer subject line:\n').strip().replace(' ', '\ ')
+        emails = input('\nEnter data transfer emails (comma separated list):\n')
+        command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}'.format(dt_file, tag, dt_dir, emails)
+
+        if 'y' in input('\ngxfer command:\n{}\ny to continue (anything else to re-create):\n'.format(command)).lower():
+            with open('gxfer.data.transfer.sh', 'w') as gx:
+                gx.write(command)
+                print('Data transfer setup complete.')
+                break
 
 
 with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
@@ -56,9 +59,14 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
     for line in fh:
 
+        if not os.path.isdir(line['Full Path']):
+            print('{} directory not found.'.format(line['Full Path']))
+            continue
+
         paths(line['Full Path'], dt_dir)
 
         fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
+
         file_field = ''
         print(fq_files)
         md5_check = 0
@@ -71,14 +79,19 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
             else:
                 md5_check += 1
 
+        line['Files'] = file_field.rstrip()
+
+        sm.writerow(line)
 
         if md5_check != 2:
             md5_missing_file_dict[line['Sample Full Name']] = line['Full Path']
+            
         line['Files'] = file_field.rstrip()
         sm.writerow(line)
 
-for sample in md5_missing_file_dict:
-    print(sample + '\t' + md5_missing_file_dict[sample])
+if len(md5_missing_file_dict) > 0:
+  for sample in md5_missing_file_dict:
+      print('Samples are missing md5 files:\n' + sample + '\t' + md5_missing_file_dict[sample])
 
 gxfr_command(dt_dir)
 
