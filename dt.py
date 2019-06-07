@@ -7,7 +7,7 @@ import subprocess
 import smartsheet
 from datetime import datetime,timedelta
 
-smart_sheet_client = smartsheet.Smartsheet('bumf4jd6jv71w4ic1w4dnlbjgj')
+smart_sheet_client = smartsheet.Smartsheet(<API_KEY>)
 smart_sheet_client.errors_as_exceptions(True)
 
 mm_dd_yy = datetime.now().strftime('%m%d%y')
