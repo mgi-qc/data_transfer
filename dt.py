@@ -31,10 +31,6 @@ def paths(indir, dtdir):
         df.write('{}/*fastq*\n'.format(indir))
 
 
-def md5_check():
-    pass
-
-
 def gxfr_command(dtdir):
 
     while True:
@@ -59,6 +55,8 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
     sm = csv.DictWriter(sf, fieldnames=infile_header, delimiter=',')
     sm.writeheader()
 
+    md5_missing_file_dict = {}
+
     for line in fh:
 
         if not os.path.isdir(line['Full Path']):
@@ -70,17 +68,30 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
         fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
 
         file_field = ''
+        print(fq_files)
+        md5_check = 0
+
         for file in fq_files:
+            print('test1')
             fastq = file.split('/')[-1]
             if 'md5' not in fastq:
                 file_field += fastq + ' '
+            else:
+                md5_check += 1
 
         line['Files'] = file_field.rstrip()
 
         sm.writerow(line)
 
+        if md5_check != 2:
+            md5_missing_file_dict[line['Sample Full Name']] = line['Full Path']
+            
+        line['Files'] = file_field.rstrip()
+        sm.writerow(line)
+
+if len(md5_missing_file_dict) > 0:
+  for sample in md5_missing_file_dict:
+      print('Samples are missing md5 files:\n' + sample + '\t' + md5_missing_file_dict[sample])
+
 gxfr_command(dt_dir)
-
-
-
 
