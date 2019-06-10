@@ -4,14 +4,16 @@ import csv
 import argparse
 import glob
 import subprocess
-import smartsheet
+#import smartsheet
 from datetime import datetime,timedelta
 
+
 smart_sheet_client = smartsheet.Smartsheet(<API_KEY>)
+
 smart_sheet_client.errors_as_exceptions(True)
 
-mm_dd_yy = datetime.now().strftime('%m%d%y')
-exp_date = (datetime.now() + timedelta(days=14)).strftime('%m%d%y')
+mm_dd_yy = datetime.now().strftime('%m/%d/%y')
+exp_date = (datetime.now() + timedelta(days=14)).strftime('%m/%d/%y')
 
 def get_object(object_id, object_tag):
 
@@ -30,7 +32,7 @@ args = parser.parse_args()
 
 cwd = os.getcwd()
 
-disc_space_in = subprocess.check_output('df', '-h', '/gscmnt/gxfer1/gxfer1').decode('utf-8')
+disc_space_in = subprocess.check_output(['df', '-h', '/gscmnt/gxfer1/gxfer1']).decode('utf-8')
 print('Current disk status: \n')
 print(disc_space_in)
 
@@ -103,11 +105,9 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
         fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
 
         file_field = ''
-        print(fq_files)
         md5_check = 0
 
         for file in fq_files:
-            print('test1')
             fastq = file.split('/')[-1]
             if 'md5' not in fastq:
                 file_field += fastq + ' '
@@ -131,10 +131,7 @@ if len(md5_missing_file_dict) > 0:
 emails = gxfr_command(dt_dir)
 
 
-#Building Smartsheet:
-
-"""WORK IN PROGRESS"""
-
+#Updating smartsheet:
 data_transfer_sheet = get_object(33051905419140, 's')
 
 columns = data_transfer_sheet.columns
