@@ -15,8 +15,8 @@ if API_KEY is None:
 smart_sheet_client = smartsheet.Smartsheet(API_KEY)
 smart_sheet_client.errors_as_exceptions(True)
 
-mm_dd_yy = datetime.now().strftime('%m/%d/%y')
-exp_date = (datetime.now() + timedelta(days=14)).strftime('%m/%d/%y')
+mm_dd_yy = datetime.now().strftime('%Y-%m-%d')
+exp_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
 
 
 def get_object(object_id, object_tag):
