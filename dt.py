@@ -4,16 +4,20 @@ import csv
 import argparse
 import glob
 import subprocess
-#import smartsheet
+import smartsheet
 from datetime import datetime,timedelta
 
+API_KEY = os.environ.get('SMRT_API')
 
-smart_sheet_client = smartsheet.Smartsheet(<API_KEY>)
+if API_KEY is None:
+    sys.exit('Api key not found')
 
+smart_sheet_client = smartsheet.Smartsheet(API_KEY)
 smart_sheet_client.errors_as_exceptions(True)
 
 mm_dd_yy = datetime.now().strftime('%m/%d/%y')
 exp_date = (datetime.now() + timedelta(days=14)).strftime('%m/%d/%y')
+
 
 def get_object(object_id, object_tag):
 
@@ -23,20 +27,26 @@ def get_object(object_id, object_tag):
         obj = smart_sheet_client.Workspaces.get_workspace(str(object_id))
     elif object_tag == 's':
         obj = smart_sheet_client.Sheets.get_sheet(str(object_id))
+
     return obj
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', type=str, help='Illumina bam path tsv from imp', required=True)
+parser.add_argument('-ub', help='Uses Gerald Bam Path for transfer files', action='store_true')
+parser.add_argument('-ab', type=str, help='User input file dir for transfer')
 args = parser.parse_args()
 
 cwd = os.getcwd()
 
+if not os.path.isfile(args.f):
+    sys.exit('{} file not found'.format(args.f))
+
 disc_space_in = subprocess.check_output(['df', '-h', '/gscmnt/gxfer1/gxfer1']).decode('utf-8')
-print('Current disk status: \n')
+print('\nCurrent disk status:')
 print(disc_space_in)
 
-disc_in = input('\nIs there adequate disk space?(y/n): ')
+disc_in = input('Is there adequate disk space?(y/n): ')
 
 while True:
     if disc_in == 'n':
@@ -45,10 +55,6 @@ while True:
         break
     else:
         disc_in = input('Please enter either y or n: ')
-
-
-if not os.path.isfile(args.f):
-    sys.exit('{} file not found'.format(args.f))
 
 dt_dir = input('\nInput data transfer directory (JIRA ticket number):\n').strip()
 
@@ -68,68 +74,102 @@ def paths(indir, dtdir):
         df.write('{}/*fastq*\n'.format(indir))
 
 
+def write_samplemap(path_samp, dtdir):
+    dt_file = dtdir.lower().replace('-', '')
+    
+    with open(dt_file, 'a') as df:
+        df.write(path_samp)
+
+
 def gxfr_command(dtdir):
 
     while True:
         dt_file = dtdir.lower().replace('-', '')
         tag = input('\nEnter data transfer subject line:\n').strip().replace(' ', '\ ')
-        emails = input('\nEnter data transfer emails (comma separated list):\n')
-        command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(dt_file, tag, dt_dir, emails)
+        input_emails = input('\nEnter data transfer emails (comma separated list):\n')
+        input_emails = input_emails + ',dt@jira.ris.wustl.edu'
+        command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(dt_file, tag, dt_dir, input_emails)
 
         if 'y' in input('\ngxfer command:\n{}\ny to continue (anything else to re-create):\n'.format(command)).lower():
             with open('gxfer.data.transfer.sh', 'w') as gx:
                 gx.write(command)
-                print('Data transfer setup complete.')
-                return emails
+                print('\nData transfer setup complete.')
+                print('{} Samples ready for transfer.'.format(sample_count))
+                print('Transfer directory:\n{}'.format(os.path.abspath(os.getcwd())))
+                return input_emails
+
+
+def md5_check(md5_dir, sample, nu_check):
+    search_type = '*.gz.md5'
+
+    if args.ub:
+        search_type = '*.bam.md5'
+    if len(glob.glob('{}/{}'.format(md5_dir, search_type))) != nu_check:
+        print('{} md5 files are missing from {}'.format(sample, md5_dir))
 
 
 with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
     fh = csv.DictReader(infiletsv, delimiter='\t')
     infile_header = fh.fieldnames
-    infile_header.append('Files')
+
+    if not (args.ub or args.ab):
+        infile_header.extend(['File1', 'File2'])
 
     sm = csv.DictWriter(sf, fieldnames=infile_header, delimiter=',')
     sm.writeheader()
 
     md5_missing_file_dict = {}
+    sample_count = 0
 
     for line in fh:
 
-        if not os.path.isdir(line['Full Path']):
-            print('{} directory not found.'.format(line['Full Path']))
-            continue
+        sample_count += 1
 
-        paths(line['Full Path'], dt_dir)
+        if not (args.ub or args.ab):
 
-        fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
+            if not os.path.isdir(line['Full Path']):
+                print('{} directory not found.'.format(line['Full Path']))
+                continue
 
-        file_field = ''
-        md5_check = 0
+            paths(line['Full Path'], dt_dir)
+            md5_check(line['Full Path'], line['Sample Full Name'], 2)
+            fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
+            file_count = 1
 
-        for file in fq_files:
-            fastq = file.split('/')[-1]
-            if 'md5' not in fastq:
-                file_field += fastq + ' '
+            for file in fq_files:
+                fastq = file.split('/')[-1]
+
+                if 'md5' not in fastq:
+                    line['File{}'.format(file_count)] = fastq
+                    file_count += 1
+
+            sm.writerow(line)
+
+        if args.ub:
+
+            if os.path.isfile(line['Gerald Bam Path']):
+                md5_check(os.path.dirname(line['Gerald Bam Path']), line['Sample Full Name'], 1)
+                with open(dt_dir.lower().replace('-', ''), 'a') as fh:
+                    fh.write('{}\n'.format(line['Gerald Bam Path']))
             else:
-                md5_check += 1
+                print('{} file not found.'.format(line['Gerald Bam Path']))
 
-        line['Files'] = file_field.rstrip()
+            sm.writerow(line)
 
-        sm.writerow(line)
+        if args.ab:
+            sm.writerow(line)
 
-        if md5_check != 2:
-            md5_missing_file_dict[line['Sample Full Name']] = line['Full Path']
-            
-        line['Files'] = file_field.rstrip()
-        sm.writerow(line)
+if args.ab:
+    if os.path.isdir(args.ab):
+        with open(dt_dir.lower().replace('-', ''), 'a') as fh:
+            fh.write('{}*\n'.format(args.ab))
+    else:
+        sys.exit('{} directory not found'.format(args.b))
 
-if len(md5_missing_file_dict) > 0:
-  for sample in md5_missing_file_dict:
-      print('Samples are missing md5 files:\n' + sample + '\t' + md5_missing_file_dict[sample])
+write_samplemap(os.path.realpath('Samplemap.csv'), dt_dir)
 
 emails = gxfr_command(dt_dir)
-
 
 #Updating smartsheet:
 data_transfer_sheet = get_object(33051905419140, 's')
