@@ -129,7 +129,7 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
         if not (args.ub or args.ab):
 
             if not os.path.isdir(line['Full Path']):
-                print('{} directory not found.'.format(line['Full Path']))
+                print('Sample: {}, {} directory not found.'.format(line['Sample Full Name'], line['Full Path']))
                 continue
 
             paths(line['Full Path'], dt_dir)
