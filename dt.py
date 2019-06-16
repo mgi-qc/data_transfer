@@ -5,7 +5,7 @@ import argparse
 import glob
 import subprocess
 import smartsheet
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 
 API_KEY = os.environ.get('SMRT_API')
 
@@ -35,6 +35,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-f', type=str, help='Illumina bam path tsv from imp', required=True)
 parser.add_argument('-ub', help='Uses Gerald Bam Path for transfer files', action='store_true')
 parser.add_argument('-ab', type=str, help='User input file dir for transfer')
+parser.add_argument('-c', help='Input file format .csv', action='store_true')
 args = parser.parse_args()
 
 cwd = os.getcwd()
@@ -108,9 +109,13 @@ def md5_check(md5_dir, sample, nu_check):
         print('{} md5 files are missing from {}'.format(sample, md5_dir))
 
 
+delim = '\t'
+if args.c:
+    delim = ','
+
 with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
-    fh = csv.DictReader(infiletsv, delimiter='\t')
+    fh = csv.DictReader(infiletsv, delimiter=delim)
     infile_header = fh.fieldnames
 
     if not (args.ub or args.ab):
@@ -171,7 +176,7 @@ write_samplemap(os.path.realpath('Samplemap.csv'), dt_dir)
 
 emails = gxfr_command(dt_dir)
 
-#Updating smartsheet:
+# Updating smartsheet:
 data_transfer_sheet = get_object(33051905419140, 's')
 
 columns = data_transfer_sheet.columns
