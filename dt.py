@@ -33,8 +33,10 @@ def get_object(object_id, object_tag):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', type=str, help='Illumina bam path tsv from imp', required=True)
-parser.add_argument('-ub', help='Uses Gerald Bam Path for transfer files', action='store_true')
-parser.add_argument('-ab', type=str, help='User input file dir for transfer')
+parser.add_argument('-gb', help='Uses Gerald Bam Path for transfer files', action='store_true')
+parser.add_argument('-i', help='Uses index to find fastq files', action='store_true')
+parser.add_argument('-t', help='input file format is tsv (default=csv)', action='store_true')
+parser.add_argument('-ud', type=str, help='User input dir for file transfer')
 args = parser.parse_args()
 
 cwd = os.getcwd()
@@ -66,12 +68,15 @@ else:
     os.chdir(dt_dir)
 
 
-def paths(indir, dtdir):
+def paths(indir, dtdir, index=None):
     dt_file = dtdir.lower().replace('-', '')
 
     with open('paths', 'a') as p, open(dt_file, 'a') as df:
         p.write('{}\n'.format(indir))
-        df.write('{}/*fastq*\n'.format(indir))
+        if args.i:
+            df.write('{}/{}*_R*fastq*\n'.format(indir, index))
+        else:
+            df.write('{}/*fastq*\n'.format(indir))
 
 
 def write_samplemap(path_samp, dtdir):
@@ -102,7 +107,7 @@ def gxfr_command(dtdir):
 def md5_check(md5_dir, sample, nu_check):
     search_type = '*.gz.md5'
 
-    if args.ub:
+    if args.ud:
         search_type = '*.bam.md5'
     if len(glob.glob('{}/{}'.format(md5_dir, search_type))) != nu_check:
         print('{} md5 files are missing from {}'.format(sample, md5_dir))
@@ -110,10 +115,14 @@ def md5_check(md5_dir, sample, nu_check):
 
 with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
-    fh = csv.DictReader(infiletsv, delimiter='\t')
+    delim = ','
+    if args.t:
+        delim = '\t'
+
+    fh = csv.DictReader(infiletsv, delimiter=delim)
     infile_header = fh.fieldnames
 
-    if not (args.ub or args.ab):
+    if not (args.gb or args.ud):
         infile_header.extend(['File1', 'File2'])
 
     sm = csv.DictWriter(sf, fieldnames=infile_header, delimiter=',')
@@ -126,15 +135,17 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
         sample_count += 1
 
-        if not (args.ub or args.ab):
+        if not (args.gb or args.ud):
 
             if not os.path.isdir(line['Full Path']):
                 print('Sample: {}, {} directory not found.'.format(line['Sample Full Name'], line['Full Path']))
                 continue
 
-            paths(line['Full Path'], dt_dir)
+            paths(line['Full Path'], dt_dir, index=line['Index Sequence'])
             md5_check(line['Full Path'], line['Sample Full Name'], 2)
             fq_files = glob.glob('{}/*fastq*'.format(line['Full Path']))
+            if args.i:
+                fq_files = glob.glob('{}/{}*_R*fastq*'.format(line['Full Path'], line['Index Sequence']))
             file_count = 1
 
             for file in fq_files:
@@ -146,7 +157,7 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
             sm.writerow(line)
 
-        if args.ub:
+        if args.gb:
 
             if os.path.isfile(line['Gerald Bam Path']):
                 md5_check(os.path.dirname(line['Gerald Bam Path']), line['Sample Full Name'], 1)
@@ -157,11 +168,11 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
             sm.writerow(line)
 
-        if args.ab:
+        if args.ud:
             sm.writerow(line)
 
-if args.ab:
-    if os.path.isdir(args.ab):
+if args.gb:
+    if os.path.isdir(args.gb):
         with open(dt_dir.lower().replace('-', ''), 'a') as fh:
             fh.write('{}*\n'.format(args.ab))
     else:
