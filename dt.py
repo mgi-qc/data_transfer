@@ -37,6 +37,7 @@ parser.add_argument('-gb', help='Uses Gerald Bam Path for transfer files', actio
 parser.add_argument('-i', help='Uses index to find fastq files', action='store_true')
 parser.add_argument('-t', help='input file format is tsv (default=csv)', action='store_true')
 parser.add_argument('-ud', type=str, help='User input dir for file transfer')
+parser.add_argument('-c', help='cellRanger data transfer', action='store_true')
 args = parser.parse_args()
 
 cwd = os.getcwd()
@@ -71,12 +72,12 @@ else:
 def paths(indir, dtdir, index=None):
     dt_file = dtdir.lower().replace('-', '')
 
-    with open('paths', 'a') as p, open(dt_file, 'a') as df:
+    with open('paths', 'a') as p, open(dt_file, 'a') as d:
         p.write('{}\n'.format(indir))
         if args.i:
-            df.write('{}/{}*_R*fastq*\n'.format(indir, index))
+            d.write('{}/{}*_R*fastq*\n'.format(indir, index))
         else:
-            df.write('{}/*fastq*\n'.format(indir))
+            d.write('{}/*fastq*\n'.format(indir))
 
 
 def write_samplemap(path_samp, dtdir):
@@ -92,7 +93,7 @@ def gxfr_command(dtdir):
         dt_file = dtdir.lower().replace('-', '')
         tag = input('\nEnter data transfer subject line:\n').strip().replace(' ', '\ ')
         input_emails = input('\nEnter data transfer emails (comma separated list):\n')
-        input_emails = input_emails + ',dt@jira.ris.wustl.edu'
+        input_emails = input_emails + ',lmaguire,dt@jira.ris.wustl.edu'
         command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(dt_file, tag, dt_dir, input_emails)
 
         if 'y' in input('\ngxfer command:\n{}\ny to continue (anything else to re-create):\n'.format(command)).lower():
@@ -111,6 +112,16 @@ def md5_check(md5_dir, sample, nu_check):
         search_type = '*.bam.md5'
     if len(glob.glob('{}/{}'.format(md5_dir, search_type))) != nu_check:
         print('{} md5 files are missing from {}'.format(sample, md5_dir))
+
+
+if args.c:
+    with open('{}.cellRanger.tar.sh'.format(dt_dir), 'w') as f, open(dt_dir.lower().replace('-', ''), 'a') as df:
+        while True:
+            sample_name = input('\ncellRanger sample name:\n') + '.tar.gz'
+            df.write('{}\n'.format(os.path.join(cwd, sample_name)))
+            f.write('tar -czvf {} {}\n'.format(sample_name, input('cellRanger data directory:\n')))
+            if 'n' in input('\nEnter additional cellRanger samples? (y/n):\n').lower():
+                break
 
 
 with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
@@ -137,6 +148,10 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
         if not (args.gb or args.ud):
 
+            if 'Full Path' not in line or 'Index Sequence' not in line or 'Sample Full Name' not in line:
+                sys.exit('Header fields not correct, please check input file headers: Full Path Index, Sequence, '
+                         'Sample, Full Name are present')
+
             if not os.path.isdir(line['Full Path']):
                 print('Sample: {}, {} directory not found.'.format(line['Sample Full Name'], line['Full Path']))
                 continue
@@ -149,9 +164,12 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
             file_count = 1
 
             for file in fq_files:
+
                 fastq = file.split('/')[-1]
 
                 if 'md5' not in fastq:
+                    if file_count > 2:
+                        sys.exit('More than 2 fastq files match to {}'.format(fastq))
                     line['File{}'.format(file_count)] = fastq
                     file_count += 1
 
@@ -178,11 +196,12 @@ if args.gb:
     else:
         sys.exit('{} directory not found'.format(args.b))
 
+
 write_samplemap(os.path.realpath('Samplemap.csv'), dt_dir)
 
 emails = gxfr_command(dt_dir)
 
-#Updating smartsheet:
+# Updating smartsheet:
 data_transfer_sheet = get_object(33051905419140, 's')
 
 columns = data_transfer_sheet.columns
