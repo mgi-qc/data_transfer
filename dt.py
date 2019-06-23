@@ -5,7 +5,7 @@ import argparse
 import glob
 import subprocess
 import smartsheet
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 
 API_KEY = os.environ.get('SMRT_API')
 
@@ -32,9 +32,9 @@ def get_object(object_id, object_tag):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-f', type=str, help='Illumina bam path tsv from imp', required=True)
+parser.add_argument('-f', type=str, help='Illumina bam path csv from imp (required)', required=True)
 parser.add_argument('-gb', help='Uses Gerald Bam Path for transfer files', action='store_true')
-parser.add_argument('-i', help='Uses index to find fastq files', action='store_true')
+parser.add_argument('-i', help='Uses Index Sequence to find fastq files', action='store_true')
 parser.add_argument('-t', help='input file format is tsv (default=csv)', action='store_true')
 parser.add_argument('-ud', type=str, help='User input dir for file transfer')
 parser.add_argument('-c', help='cellRanger data transfer', action='store_true')
@@ -49,17 +49,23 @@ disc_space_in = subprocess.check_output(['df', '-h', '/gscmnt/gxfer1/gxfer1']).d
 print('\nCurrent disk status:')
 print(disc_space_in)
 
-disc_in = input('Is there adequate disk space?(y/n): ')
+# Turned off, user can quit if there's inadequate disk space.
+# disc_in = input('Is there adequate disk space?(y/n): ')
+#
+# while True:
+#     if disc_in == 'n':
+#         sys.exit('Insufficient disk space.')
+#     elif disc_in == 'y':
+#         break
+#     else:
+#         disc_in = input('Please enter either y or n: ')
 
 while True:
-    if disc_in == 'n':
-        sys.exit('Insufficient disk space.')
-    elif disc_in == 'y':
-        break
+    dt_dir = input('Input data transfer directory (JIRA ticket number, "-" required in dir name):\n').strip()
+    if '-' not in dt_dir:
+        continue
     else:
-        disc_in = input('Please enter either y or n: ')
-
-dt_dir = input('\nInput data transfer directory (JIRA ticket number):\n').strip()
+        break
 
 if os.path.isdir(dt_dir):
     sys.exit('Exiting: {} directory already exists.'.format(dt_dir))
@@ -97,6 +103,13 @@ def gxfr_command(dtdir):
         command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(dt_file, tag, dt_dir, input_emails)
 
         if 'y' in input('\ngxfer command:\n{}\ny to continue (anything else to re-create):\n'.format(command)).lower():
+            if args.gb and dup_check:
+                with open('gxfer.data.transfer.symlink.sh', 'w') as gxs:
+                    sym_command = 'gxfer-upload-md5 --file={} --tag="{}\ {}" --emails={}\n'.format(
+                        '{}.symlink'.format(dt_file), tag, dt_dir, input_emails)
+                    print('\nSymbolic link gxfer command for duplicate bams:\n{}'.format(sym_command))
+                    gxs.write(sym_command)
+
             with open('gxfer.data.transfer.sh', 'w') as gx:
                 gx.write(command)
                 print('\nData transfer setup complete.')
@@ -108,7 +121,7 @@ def gxfr_command(dtdir):
 def md5_check(md5_dir, sample, nu_check):
     search_type = '*.gz.md5'
 
-    if args.ud:
+    if args.gb:
         search_type = '*.bam.md5'
     if len(glob.glob('{}/{}'.format(md5_dir, search_type))) != nu_check:
         print('{} md5 files are missing from {}'.format(sample, md5_dir))
@@ -140,6 +153,8 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
     sm.writeheader()
 
     md5_missing_file_dict = {}
+    dup_status = False
+    dup_check = {}
     sample_count = 0
 
     for line in fh:
@@ -177,28 +192,69 @@ with open(args.f, 'r') as infiletsv, open('Samplemap.csv', 'w') as sf:
 
         if args.gb:
 
+            if 'Gerald Bam Path' not in line:
+                sys.exit('Gerald Bam Path header not found, please check header is named correctly')
+
             if os.path.isfile(line['Gerald Bam Path']):
                 md5_check(os.path.dirname(line['Gerald Bam Path']), line['Sample Full Name'], 1)
+
+                if '.bam' in line['Gerald Bam Path']:
+                    bam_file = line['Gerald Bam Path'].split('/')[-1]
+                    if bam_file not in dup_check:
+                        dup_check[bam_file] = bam_file
+                    else:
+                        dup_status = True
+
                 with open(dt_dir.lower().replace('-', ''), 'a') as fh:
                     fh.write('{}\n'.format(line['Gerald Bam Path']))
             else:
-                print('{} file not found.'.format(line['Gerald Bam Path']))
+                print('Bam file not found:\n{}'.format(line['Gerald Bam Path']))
+                print(line, '\n')
 
             sm.writerow(line)
 
         if args.ud:
             sm.writerow(line)
 
-if args.gb:
-    if os.path.isdir(args.gb):
-        with open(dt_dir.lower().replace('-', ''), 'a') as fh:
-            fh.write('{}*\n'.format(args.ab))
-    else:
-        sys.exit('{} directory not found'.format(args.b))
+if args.ud:
+
+    if not os.path.isdir(args.ud):
+        sys.exit('{} directory not found'.format(args.ud))
+
+    with open(dt_dir.lower().replace('-', ''), 'a') as fh:
+        fh.write('{}*\n'.format(args.ud))
+
+
+if dup_status:
+    with open('Samplemap.csv', 'r') as sm, open('Samplemap.symlink.csv', 'w') as ss, \
+            open('{}.symlink'.format(dt_dir.lower().replace('-', '')), 'w') as dts:
+
+        sm_csv = csv.DictReader(sm)
+        sm_header = sm_csv.fieldnames
+        sm_header.append('bam_symlink_path')
+
+        ss_csv = csv.DictWriter(ss, fieldnames=sm_header)
+        ss_csv.writeheader()
+
+        if not os.path.isdir('symlink'):
+            os.mkdir('symlink')
+
+        for line in sm_csv:
+            if line['Gerald Bam Path'] and 'bam' in line['Gerald Bam Path']:
+                bamfile_path_split = line['Gerald Bam Path'].split('/')
+                symlink_file = '{}/symlink/{}.{}'.format(os.getcwd(), bamfile_path_split[-2], bamfile_path_split[-1])
+                if not os.path.islink(symlink_file):
+                    os.symlink(line['Gerald Bam Path'], symlink_file)
+                    line['bam_symlink_path'] = symlink_file
+                    ss_csv.writerow(line)
+                    dts.write('{}\n'.format(symlink_file))
+                else:
+                    print('{} symlink path already exists.'.format(symlink_file))
+
+        dts.write('Samplemap.symlink.csv')
 
 
 write_samplemap(os.path.realpath('Samplemap.csv'), dt_dir)
-
 emails = gxfr_command(dt_dir)
 
 # Updating smartsheet:
@@ -212,9 +268,9 @@ for column in columns:
 
 new_row = smartsheet.models.Row()
 new_row.to_bottom = True
-new_row.cells.append({'column_id' : column_dict['JIRA ID'],'value' : dt_dir})
-new_row.cells.append({'column_id' : column_dict['Transfer Date'], 'value' : mm_dd_yy})
-new_row.cells.append({'column_id' : column_dict['Data Transfer Expiration'], 'value' : exp_date})
-new_row.cells.append({'column_id' : column_dict['Collaborator Email'], 'value' : emails})
+new_row.cells.append({'column_id': column_dict['JIRA ID'], 'value' : dt_dir})
+new_row.cells.append({'column_id': column_dict['Transfer Date'], 'value': mm_dd_yy})
+new_row.cells.append({'column_id': column_dict['Data Transfer Expiration'], 'value': exp_date})
+new_row.cells.append({'column_id': column_dict['Collaborator Email'], 'value': emails})
 
 response = smart_sheet_client.Sheets.add_rows(data_transfer_sheet.id, new_row)
